@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Sprite Sheet Slicer</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-deep: #0a0a0f;
+    --bg-panel: #0d0d18;
+    --bg-surface: #111122;
+    --neon-green: #39ff14;
+    --neon-cyan: #00f0ff;
+    --neon-magenta: #ff00aa;
+    --neon-yellow: #f0ff00;
+    --neon-orange: #ff6a00;
+    --text-dim: #3a3a5c;
+    --text-mid: #7a7a9a;
+    --text-bright: #c8c8e8;
+    --border-color: #1a1a2e;
+    --scanline-opacity: 0.03;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg-deep);
+    color: var(--text-bright);
+    font-family: 'Share Tech Mono', monospace;
+    overflow-x: hidden;
+  }
+
+  /* CRT Scanline Overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, var(--scanline-opacity)) 2px,
+      rgba(0, 0, 0, var(--scanline-opacity)) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* Vignette */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.5) 100%);
+    pointer-events: none;
+    z-index: 9998;
+  }
+
+  .shell {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 30px 24px 60px;
+  }
+
+  /* ── Character Slot ── */
+  .character-slot {
+    width: 100%;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+    border: 1px dashed var(--border-color);
+    border-radius: 3px;
+    background: var(--bg-panel);
+    position: relative;
+    overflow: hidden;
+  }
+  .character-slot::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 50%, rgba(57,255,20,0.03) 0%, transparent 50%),
+      radial-gradient(circle at 80% 50%, rgba(0,240,255,0.03) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .character-slot .placeholder-text {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    animation: blink-text 2s ease-in-out infinite;
+  }
+  @keyframes blink-text {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  /* ── Title Bar ── */
+  .title-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 6px;
+  }
+  .title-bar h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 16px;
+    color: var(--neon-green);
+    text-shadow: 0 0 20px rgba(57,255,20,0.4), 0 0 60px rgba(57,255,20,0.15);
+    letter-spacing: 2px;
+  }
+  .title-tag {
+    font-size: 10px;
+    color: var(--neon-cyan);
+    border: 1px solid rgba(0,240,255,0.25);
+    padding: 3px 8px;
+    border-radius: 2px;
+    text-shadow: 0 0 6px rgba(0,240,255,0.4);
+  }
+  .subtitle {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 28px;
+    letter-spacing: 1px;
+  }
+  .subtitle span { color: var(--neon-magenta); }
+
+  /* ── Buttons ── */
+  .controls {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .btn {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    padding: 10px 20px;
+    border: 1px solid;
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%);
+    pointer-events: none;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+
+  .btn-primary {
+    color: var(--neon-green);
+    border-color: var(--neon-green);
+    box-shadow: 0 0 12px rgba(57,255,20,0.15), inset 0 0 12px rgba(57,255,20,0.05);
+  }
+  .btn-primary:hover {
+    background: rgba(57,255,20,0.1);
+    box-shadow: 0 0 24px rgba(57,255,20,0.3), inset 0 0 24px rgba(57,255,20,0.08);
+  }
+
+  .btn-export {
+    color: var(--neon-cyan);
+    border-color: var(--neon-cyan);
+    box-shadow: 0 0 12px rgba(0,240,255,0.12), inset 0 0 12px rgba(0,240,255,0.04);
+  }
+  .btn-export:hover {
+    background: rgba(0,240,255,0.1);
+    box-shadow: 0 0 24px rgba(0,240,255,0.25), inset 0 0 24px rgba(0,240,255,0.08);
+  }
+  .btn-export:disabled, .btn-clear:disabled, .btn-preview:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .btn-export:disabled:hover, .btn-clear:disabled:hover, .btn-preview:disabled:hover {
+    transform: none;
+    background: transparent;
+  }
+
+  .btn-clear {
+    color: var(--neon-magenta);
+    border-color: var(--neon-magenta);
+    box-shadow: 0 0 10px rgba(255,0,170,0.1);
+  }
+  .btn-clear:hover {
+    background: rgba(255,0,170,0.1);
+    box-shadow: 0 0 20px rgba(255,0,170,0.2);
+  }
+
+  .btn-preview {
+    color: var(--neon-yellow);
+    border-color: var(--neon-yellow);
+    box-shadow: 0 0 10px rgba(240,255,0,0.1);
+  }
+  .btn-preview:hover {
+    background: rgba(240,255,0,0.08);
+    box-shadow: 0 0 20px rgba(240,255,0,0.2);
+  }
+
+  /* ── Stats Bar ── */
+  .stats-bar {
+    display: none;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    padding: 12px 16px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--text-mid);
+  }
+  .stats-bar.active { display: flex; }
+  .stats-bar .stat-val {
+    color: var(--neon-yellow);
+    text-shadow: 0 0 8px rgba(240,255,0,0.3);
+  }
+
+  /* ── File List ── */
+  .file-list-panel {
+    margin-bottom: 20px;
+    padding: 14px 16px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    max-height: 200px;
+    overflow-y: auto;
+    display: none;
+  }
+  .file-list-panel.active { display: block; }
+  .file-list-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    color: var(--neon-magenta);
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+  }
+  .file-list-panel ul {
+    list-style: none;
+    font-size: 12px;
+    color: var(--text-mid);
+  }
+  .file-list-panel li {
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(26,26,46,0.5);
+    display: flex;
+    justify-content: space-between;
+  }
+  .file-list-panel li:last-child { border-bottom: none; }
+  .file-list-panel .fname { color: var(--text-bright); }
+  .file-list-panel .fsize { color: var(--text-dim); font-size: 11px; }
+
+  /* ── Scrollbar ── */
+  .file-list-panel::-webkit-scrollbar,
+  .preview-canvas-wrap::-webkit-scrollbar,
+  .sheet-canvas-wrap::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .file-list-panel::-webkit-scrollbar-track,
+  .preview-canvas-wrap::-webkit-scrollbar-track,
+  .sheet-canvas-wrap::-webkit-scrollbar-track {
+    background: var(--bg-deep);
+  }
+  .file-list-panel::-webkit-scrollbar-thumb,
+  .preview-canvas-wrap::-webkit-scrollbar-thumb,
+  .sheet-canvas-wrap::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+  }
+
+  /* ── Preview Window ── */
+  .preview-section {
+    display: none;
+    margin-bottom: 24px;
+  }
+  .preview-section.active { display: block; }
+  .preview-header {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: var(--neon-yellow);
+    margin-bottom: 12px;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .preview-header .live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--neon-green);
+    box-shadow: 0 0 8px var(--neon-green);
+    animation: pulse-dot 1s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--neon-green); }
+    50% { opacity: 0.5; box-shadow: 0 0 16px var(--neon-green); }
+  }
+  .preview-body {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .preview-stage {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    min-width: 200px;
+  }
+  .preview-canvas-container {
+    position: relative;
+    background: repeating-conic-gradient(#1a1a2e 0% 25%, #111122 0% 50%) 50% / 16px 16px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    image-rendering: pixelated;
+  }
+  .preview-canvas-container canvas {
+    image-rendering: pixelated;
+  }
+  .preview-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .preview-controls label {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .preview-controls input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100px;
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    outline: none;
+  }
+  .preview-controls input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    background: var(--neon-yellow);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 8px rgba(240,255,0,0.4);
+  }
+  .preview-controls select {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    background: var(--bg-surface);
+    color: var(--text-bright);
+    border: 1px solid var(--border-color);
+    padding: 4px 8px;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  .fps-display {
+    font-size: 12px;
+    color: var(--neon-yellow);
+    text-shadow: 0 0 6px rgba(240,255,0,0.3);
+    min-width: 60px;
+  }
+  .frame-counter {
+    font-size: 11px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 6px rgba(0,240,255,0.3);
+  }
+  .preview-info {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 16px;
+    font-size: 12px;
+    flex: 1;
+    min-width: 220px;
+  }
+  .preview-info-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    color: var(--neon-cyan);
+    margin-bottom: 12px;
+    letter-spacing: 1px;
+  }
+  .preview-info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(26,26,46,0.5);
+    color: var(--text-mid);
+  }
+  .preview-info-row:last-child { border-bottom: none; }
+  .preview-info-row .val {
+    color: var(--neon-green);
+    text-shadow: 0 0 6px rgba(57,255,20,0.2);
+  }
+
+  /* ── Sprite Sheet Output ── */
+  .sheet-section {
+    display: none;
+    margin-bottom: 24px;
+  }
+  .sheet-section.active { display: block; }
+  .sheet-header {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    color: var(--neon-cyan);
+    margin-bottom: 12px;
+    letter-spacing: 1px;
+  }
+  .sheet-canvas-wrap {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 16px;
+    overflow: auto;
+    max-height: 400px;
+  }
+  .sheet-canvas-wrap canvas {
+    image-rendering: pixelated;
+    display: block;
+  }
+
+  /* ── Main Output Area (empty state) ── */
+  .output-area {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    min-height: 260px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .output-area::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 30% 40%, rgba(57,255,20,0.02) 0%, transparent 50%),
+      radial-gradient(circle at 70% 60%, rgba(0,240,255,0.02) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    z-index: 1;
+  }
+  .empty-state .prompt-arrow {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 18px;
+    color: var(--neon-green);
+    text-shadow: 0 0 20px rgba(57,255,20,0.5);
+    display: block;
+    margin-bottom: 16px;
+    animation: cursor-blink 1s step-end infinite;
+  }
+  @keyframes cursor-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  .empty-state p {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.8;
+  }
+  .empty-state .neon-hint {
+    color: var(--neon-cyan);
+    text-shadow: 0 0 6px rgba(0,240,255,0.3);
+  }
+
+  /* ── Progress Bar ── */
+  .progress-wrap {
+    display: none;
+    margin-bottom: 20px;
+  }
+  .progress-wrap.active { display: block; }
+  .progress-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .progress-label .prog-pct { color: var(--neon-green); }
+  .progress-track {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--neon-green), var(--neon-cyan));
+    box-shadow: 0 0 12px rgba(57,255,20,0.3);
+    transition: width 0.15s ease;
+    border-radius: 3px;
+  }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--bg-surface);
+    border: 1px solid var(--neon-green);
+    color: var(--neon-green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    padding: 10px 24px;
+    border-radius: 3px;
+    box-shadow: 0 0 30px rgba(57,255,20,0.2);
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 10000;
+    pointer-events: none;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .title-bar h1 { font-size: 11px; }
+    .controls { flex-direction: column; }
+    .btn { width: 100%; text-align: center; }
+    .preview-body { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- Character Slot -->
+  <div class="character-slot" id="characterSlot">
+    <span class="placeholder-text">[ insert pixel art character here ]</span>
+  </div>
+
+  <!-- Title -->
+  <div class="title-bar">
+    <h1>The Sprite Sheet Slicer</h1>
+    <span class="title-tag">v1.0</span>
+  </div>
+  <p class="subtitle">// stitch frames → <span>sprite sheet</span> → ship it</p>
+
+  <!-- Buttons -->
+  <div class="controls">
+    <button class="btn btn-primary" onclick="selectFolder()">⬡ Select Frame Folder</button>
+    <button class="btn btn-preview" id="btnPreview" disabled onclick="togglePreview()">▶ Preview Animation</button>
+    <button class="btn btn-export" id="btnExport" disabled onclick="exportSheet()">⬇ Export Sprite Sheet</button>
+    <button class="btn btn-clear" id="btnClear" disabled onclick="clearAll()">✕ Clear</button>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-label">
+      <span id="progressText">Loading frames...</span>
+      <span class="prog-pct" id="progressPct">0%</span>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-bar" id="statsBar">
+    <span>Frames: <span class="stat-val" id="statFrames">0</span></span>
+    <span>Frame Size: <span class="stat-val" id="statSize">-</span></span>
+    <span>Sheet Size: <span class="stat-val" id="statSheet">-</span></span>
+    <span>Est. File: <span class="stat-val" id="statFile">-</span></span>
+  </div>
+
+  <!-- File List -->
+  <div class="file-list-panel" id="fileListPanel">
+    <div class="file-list-title">◆ Loaded Frames</div>
+    <ul id="fileList"></ul>
+  </div>
+
+  <!-- Preview Window -->
+  <div class="preview-section" id="previewSection">
+    <div class="preview-header">
+      <div class="live-dot"></div>
+      <span>Animation Preview</span>
+    </div>
+    <div class="preview-body">
+      <div class="preview-stage">
+        <div class="preview-canvas-container" id="previewContainer">
+          <canvas id="previewCanvas"></canvas>
+        </div>
+        <div class="preview-controls">
+          <label>FPS:</label>
+          <input type="range" id="fpsSlider" min="1" max="60" value="12" oninput="updateFPS(this.value)">
+          <span class="fps-display" id="fpsDisplay">12 FPS</span>
+        </div>
+        <div class="preview-controls">
+          <label>Scale:</label>
+          <select id="scaleSelect" onchange="updateScale(this.value)">
+            <option value="1">1x</option>
+            <option value="2" selected>2x</option>
+            <option value="3">3x</option>
+            <option value="4">4x</option>
+          </select>
+          <span class="frame-counter" id="frameCounter">Frame 0 / 0</span>
+        </div>
+      </div>
+      <div class="preview-info">
+        <div class="preview-info-title">◆ Sprite Info</div>
+        <div class="preview-info-row"><span>Total Frames</span><span class="val" id="infoFrames">-</span></div>
+        <div class="preview-info-row"><span>Frame Width</span><span class="val" id="infoWidth">-</span></div>
+        <div class="preview-info-row"><span>Frame Height</span><span class="val" id="infoHeight">-</span></div>
+        <div class="preview-info-row"><span>Sheet Width</span><span class="val" id="infoSheetW">-</span></div>
+        <div class="preview-info-row"><span>Sheet Height</span><span class="val" id="infoSheetH">-</span></div>
+        <div class="preview-info-row"><span>Playback FPS</span><span class="val" id="infoFPS">12</span></div>
+        <div class="preview-info-row"><span>Loop Duration</span><span class="val" id="infoDuration">-</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sprite Sheet Output -->
+  <div class="sheet-section" id="sheetSection">
+    <div class="sheet-header">◆ Sprite Sheet</div>
+    <div class="sheet-canvas-wrap">
+      <canvas id="sheetCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Empty State -->
+  <div class="output-area" id="emptyState">
+    <div class="empty-state">
+      <span class="prompt-arrow">▶_</span>
+      <p>Select a folder of PNG frames to begin.<br>
+      Frames are sorted <span class="neon-hint">alphabetically</span> and stitched into a <span class="neon-hint">horizontal sprite sheet</span>.<br>
+      Requires <span class="neon-hint">Chrome / Edge</span> (File System Access API).</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">Sprite sheet exported!</div>
+
+<script>
+  // ── State ──
+  let frames = [];          // Array of loaded Image objects
+  let frameWidth = 0;
+  let frameHeight = 0;
+  let sheetCanvas = null;
+  let previewAnim = null;
+  let currentFrame = 0;
+  let fps = 12;
+  let previewScale = 2;
+  let previewActive = false;
+
+  // ── Folder Selection ──
+  async function selectFolder() {
+    if (!('showDirectoryPicker' in window)) {
+      alert('This browser does not support the File System Access API.\nPlease use Chrome or Edge.');
+      return;
+    }
+
+    let dirHandle;
+    try {
+      dirHandle = await window.showDirectoryPicker();
+    } catch (e) {
+      return; // user cancelled
+    }
+
+    // Collect PNG files
+    const pngFiles = [];
+    for await (const [name, handle] of dirHandle.entries()) {
+      if (handle.kind === 'file' && name.toLowerCase().endsWith('.png')) {
+        pngFiles.push({ name, handle });
+      }
+    }
+
+    if (pngFiles.length === 0) {
+      alert('No PNG files found in the selected folder.');
+      return;
+    }
+
+    // Sort alphabetically (natural sort for frame ordering)
+    pngFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+    // Reset
+    clearAll(true);
+
+    // Show progress
+    const progressWrap = document.getElementById('progressWrap');
+    const progressFill = document.getElementById('progressFill');
+    const progressPct = document.getElementById('progressPct');
+    const progressText = document.getElementById('progressText');
+    progressWrap.classList.add('active');
+
+    // Load images
+    const loadedFrames = [];
+    let refWidth = 0, refHeight = 0;
+    let warnings = [];
+
+    for (let i = 0; i < pngFiles.length; i++) {
+      const { name, handle } = pngFiles[i];
+      const file = await handle.getFile();
+      const url = URL.createObjectURL(file);
+
+      progressText.textContent = `Loading: ${name}`;
+      const pct = Math.round(((i + 1) / pngFiles.length) * 100);
+      progressFill.style.width = pct + '%';
+      progressPct.textContent = pct + '%';
+
+      const img = await loadImage(url);
+
+      if (i === 0) {
+        refWidth = img.naturalWidth;
+        refHeight = img.naturalHeight;
+      } else {
+        if (img.naturalWidth !== refWidth || img.naturalHeight !== refHeight) {
+          warnings.push(`⚠ "${name}" is ${img.naturalWidth}×${img.naturalHeight} (expected ${refWidth}×${refHeight})`);
+        }
+      }
+
+      loadedFrames.push({ img, name, size: file.size });
+    }
+
+    // Store
+    frames = loadedFrames;
+    frameWidth = refWidth;
+    frameHeight = refHeight;
+
+    // Hide progress
+    setTimeout(() => {
+      progressWrap.classList.remove('active');
+      progressFill.style.width = '0%';
+    }, 400);
+
+    // Build the sprite sheet canvas
+    buildSpriteSheet();
+
+    // Update UI
+    updateStats();
+    updateFileList();
+    updateInfoPanel();
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('sheetSection').classList.add('active');
+    document.getElementById('btnExport').disabled = false;
+    document.getElementById('btnPreview').disabled = false;
+    document.getElementById('btnClear').disabled = false;
+
+    if (warnings.length > 0) {
+      alert('Dimension warnings:\n\n' + warnings.join('\n') + '\n\nMismatched frames are drawn at their original size.');
+    }
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = src;
+    });
+  }
+
+  // ── Build Sprite Sheet ──
+  function buildSpriteSheet() {
+    const canvas = document.getElementById('sheetCanvas');
+    const ctx = canvas.getContext('2d');
+    const totalWidth = frameWidth * frames.length;
+
+    canvas.width = totalWidth;
+    canvas.height = frameHeight;
+
+    ctx.clearRect(0, 0, totalWidth, frameHeight);
+
+    for (let i = 0; i < frames.length; i++) {
+      ctx.drawImage(frames[i].img, i * frameWidth, 0, frameWidth, frameHeight);
+    }
+
+    sheetCanvas = canvas;
+  }
+
+  // ── Stats ──
+  function updateStats() {
+    document.getElementById('statsBar').classList.add('active');
+    document.getElementById('statFrames').textContent = frames.length;
+    document.getElementById('statSize').textContent = `${frameWidth} × ${frameHeight}`;
+    const sheetW = frameWidth * frames.length;
+    document.getElementById('statSheet').textContent = `${sheetW} × ${frameHeight}`;
+
+    // Estimate file size from canvas
+    const dataUrl = sheetCanvas.toDataURL('image/png');
+    const estimatedBytes = Math.round((dataUrl.length - 'data:image/png;base64,'.length) * 0.75);
+    document.getElementById('statFile').textContent = formatBytes(estimatedBytes);
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  }
+
+  // ── File List ──
+  function updateFileList() {
+    const panel = document.getElementById('fileListPanel');
+    const list = document.getElementById('fileList');
+    panel.classList.add('active');
+    list.innerHTML = '';
+
+    frames.forEach((f, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="fname">${String(i + 1).padStart(3, '0')} — ${f.name}</span><span class="fsize">${formatBytes(f.size)}</span>`;
+      list.appendChild(li);
+    });
+  }
+
+  // ── Preview ──
+  function togglePreview() {
+    const section = document.getElementById('previewSection');
+    const btn = document.getElementById('btnPreview');
+
+    if (previewActive) {
+      stopPreview();
+      section.classList.remove('active');
+      btn.textContent = '▶ Preview Animation';
+      previewActive = false;
+    } else {
+      section.classList.add('active');
+      btn.textContent = '■ Stop Preview';
+      previewActive = true;
+      startPreview();
+    }
+  }
+
+  function startPreview() {
+    if (frames.length === 0) return;
+
+    const canvas = document.getElementById('previewCanvas');
+    const container = document.getElementById('previewContainer');
+    const ctx = canvas.getContext('2d');
+
+    const displayW = frameWidth * previewScale;
+    const displayH = frameHeight * previewScale;
+
+    canvas.width = displayW;
+    canvas.height = displayH;
+    container.style.width = displayW + 'px';
+    container.style.height = displayH + 'px';
+
+    ctx.imageSmoothingEnabled = false;
+    currentFrame = 0;
+
+    function animate() {
+      ctx.clearRect(0, 0, displayW, displayH);
+      ctx.drawImage(frames[currentFrame].img, 0, 0, displayW, displayH);
+      document.getElementById('frameCounter').textContent = `Frame ${currentFrame + 1} / ${frames.length}`;
+      currentFrame = (currentFrame + 1) % frames.length;
+    }
+
+    animate();
+    previewAnim = setInterval(animate, 1000 / fps);
+  }
+
+  function stopPreview() {
+    if (previewAnim) {
+      clearInterval(previewAnim);
+      previewAnim = null;
+    }
+  }
+
+  function updateFPS(val) {
+    fps = parseInt(val);
+    document.getElementById('fpsDisplay').textContent = fps + ' FPS';
+    document.getElementById('infoFPS').textContent = fps;
+    updateDuration();
+
+    if (previewActive) {
+      stopPreview();
+      startPreview();
+    }
+  }
+
+  function updateScale(val) {
+    previewScale = parseInt(val);
+    if (previewActive) {
+      stopPreview();
+      startPreview();
+    }
+  }
+
+  function updateInfoPanel() {
+    document.getElementById('infoFrames').textContent = frames.length;
+    document.getElementById('infoWidth').textContent = frameWidth + 'px';
+    document.getElementById('infoHeight').textContent = frameHeight + 'px';
+    document.getElementById('infoSheetW').textContent = (frameWidth * frames.length) + 'px';
+    document.getElementById('infoSheetH').textContent = frameHeight + 'px';
+    document.getElementById('infoFPS').textContent = fps;
+    updateDuration();
+  }
+
+  function updateDuration() {
+    if (frames.length === 0) return;
+    const dur = (frames.length / fps).toFixed(2);
+    document.getElementById('infoDuration').textContent = dur + 's';
+  }
+
+  // ── Export ──
+  function exportSheet() {
+    if (!sheetCanvas) return;
+
+    sheetCanvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'sprite_sheet.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast();
+    }, 'image/png');
+  }
+
+  // ── Clear ──
+  function clearAll(silent) {
+    stopPreview();
+
+    // Revoke object URLs
+    frames.forEach(f => {
+      if (f.img && f.img.src.startsWith('blob:')) {
+        URL.revokeObjectURL(f.img.src);
+      }
+    });
+
+    frames = [];
+    frameWidth = 0;
+    frameHeight = 0;
+    sheetCanvas = null;
+    currentFrame = 0;
+    previewActive = false;
+
+    document.getElementById('statsBar').classList.remove('active');
+    document.getElementById('fileListPanel').classList.remove('active');
+    document.getElementById('fileList').innerHTML = '';
+    document.getElementById('previewSection').classList.remove('active');
+    document.getElementById('sheetSection').classList.remove('active');
+    document.getElementById('emptyState').style.display = '';
+    document.getElementById('btnExport').disabled = true;
+    document.getElementById('btnPreview').disabled = true;
+    document.getElementById('btnPreview').textContent = '▶ Preview Animation';
+    if (!silent) document.getElementById('btnClear').disabled = true;
+  }
+
+  // ── Toast ──
+  function showToast() {
+    const toast = document.getElementById('toast');
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2000);
+  }
+</script>
+
+</body>
+</html>
